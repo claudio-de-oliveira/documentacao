@@ -95,4 +95,160 @@ O `Unique` é um tipo interno da biblioteca padrão (`std::ptr::Unique`), não s
 * **RefCell<T>**: `[ Contador | Dado T ]` (O dado está "dentro" dele)
 * **Unique<T>**: `[ Ponteiro Bruto ]` (Com metadados de tipagem para o compilador)
 
-Seria útil para você ver um exemplo de código que combine **Rc** e **RefCell** para criar uma estrutura de dados compartilhada e mutável?
+Aqui está o documento atualizado. Adicionei exemplos práticos e concisos para cada um dos conceitos, focando em **quando** e **como** utilizá-los no seu código.
+
+---
+
+# Exemplos
+
+---
+
+## 1. Box<T> (O Dono Único)
+
+O `Box` aloca memória no **Heap**. É o ponteiro inteligente mais simples, usado para tipos com tamanho desconhecido em compilação ou para evitar cópias de grandes estruturas na Stack.
+
+### Exemplo Simples:
+
+```rust
+fn main() {
+    // O valor 5 é colocado no Heap
+    let b = Box::new(5);
+    
+    // Podemos usar b como se fosse um i32 comum graças ao Deref
+    println!("Valor no heap: {}", *b + 10); 
+} // A memória no heap é liberada aqui automaticamente (Drop)
+
+```
+
+---
+
+## 2. Rc<T> (Propriedade Compartilhada)
+
+O `Rc` (Reference Counted) permite que um dado tenha vários donos. Ele é ideal para grafos ou estruturas onde a vida útil do dado não é linear.
+
+### Exemplo Simples:
+
+```rust
+use std::rc::Rc;
+
+fn main() {
+    let original = Rc::new(String::from("Dados Compartilhados"));
+    
+    // Incrementa o contador 'strong' para 2
+    let clone_1 = Rc::clone(&original);
+    
+    {
+        // Incrementa o contador para 3
+        let clone_2 = Rc::clone(&original);
+        println!("Contagem: {}", Rc::strong_count(&original));
+    } // clone_2 sai de escopo, contagem volta para 2
+
+    println!("Contagem final: {}", Rc::strong_count(&original));
+}
+
+```
+
+---
+
+## 3. RefCell<T> (Mutabilidade Interior Dinâmica)
+
+Permite modificar dados mesmo através de referências imutáveis, verificando as regras de empréstimo em tempo de execução.
+
+### Exemplo Simples:
+
+```rust
+use std::cell::RefCell;
+
+fn main() {
+    let dado = RefCell::new(10);
+
+    // Podemos criar uma referência mutável mesmo 'dado' não sendo 'let mut'
+    let mut referencia_mut = dado.borrow_mut();
+    *referencia_mut += 5;
+    
+    println!("Novo valor: {:?}", referencia_mut);
+    
+    // IMPORTANTE: Se tentássemos um .borrow() aqui sem soltar o mut, o programa daria PANIC.
+} 
+
+```
+
+---
+
+## 4. Cell<T> (Mutabilidade por Cópia)
+
+Semelhante ao `RefCell`, mas sem contadores de runtime. Ele funciona substituindo o valor inteiro, por isso exige que o tipo seja `Copy`.
+
+### Exemplo Simples:
+
+```rust
+use std::cell::Cell;
+
+fn main() {
+    let c = Cell::new(100);
+
+    let valor_antigo = c.get();
+    c.set(200); // Altera o valor interno
+
+    println!("Antigo: {}, Novo: {}", valor_antigo, c.get());
+}
+
+```
+
+---
+
+## 5. Unique<T> (O Bloco de Construção Interno)
+
+O `Unique` é uma abstração interna usada para construir coleções. Ele garante ao compilador que o ponteiro é o dono da memória e nunca é nulo.
+
+### Exemplo Conceitual (Uso em Structs do Sistema):
+
+```rust
+// Exemplo de como o Rust define um Box internamente (simplificado)
+// Requer #![feature(ptr_internals)] em versões nightly
+struct MyBox<T> {
+    ptr: std::ptr::Unique<T>,
+}
+
+// O Unique garante que MyBox<T> é o dono exclusivo de T,
+// permitindo que o Drop Checker saiba que deve limpar T.
+
+```
+
+---
+
+## Tabela Comparativa de Implementação
+
+| Ponteiro | Local do Dado | Mutabilidade | Risco de Pânico | Overhead |
+| --- | --- | --- | --- | --- |
+| **Box<T>** | Heap | Estática | Não | Zero |
+| **Rc<T>** | Heap | Imutável | Não | Contagem Ref. |
+| **RefCell<T>** | Local | Dinâmica | **Sim** | Verificação Runtime |
+| **Cell<T>** | Local | Por Cópia | Não | Zero |
+
+---
+
+## Padrão Comum: O "Super Ponteiro" `Rc<RefCell<T>>`
+
+Muitas vezes você precisará de **múltiplos donos** (Rc) e que todos eles possam **modificar** o dado (RefCell).
+
+```rust
+use std::rc::Rc;
+use std::cell::RefCell;
+
+fn main() {
+    let compartilhado = Rc::new(RefCell::new(5));
+
+    let dono_1 = Rc::clone(&compartilhado);
+    let dono_2 = Rc::clone(&compartilhado);
+
+    *dono_1.borrow_mut() += 10;
+    *dono_2.borrow_mut() += 20;
+
+    println!("Valor final: {:?}", compartilhado.borrow()); // Resultado: 35
+}
+
+```
+
+---
+
